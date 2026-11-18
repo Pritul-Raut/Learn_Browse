@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusFrame — Embedded Mini-Browser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for crisp browser UI icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+        /* Custom scrollbar for tab bar on mobile/small screens */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Subtle loading bar animation */
+        @keyframes loadingBar {
+            0% { width: 0%; opacity: 1; }
+            50% { width: 70%; opacity: 1; }
+            90% { width: 95%; opacity: 1; }
+            100% { width: 100%; opacity: 0; }
+        }
+        .animate-load {
+            animation: loadingBar 1.2s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen w-screen flex flex-col select-none">
+
+    <!-- Top Browser Chrome Container -->
+    <header class="bg-slate-900 border-b border-slate-800 flex flex-col shadow-lg z-20">
+        
+        <!-- 1. Window Controls & Tab Bar -->
+        <div class="flex items-center px-3 pt-2 gap-2 bg-slate-950/60">
+            <!-- Decorative macOS-style Window Dots -->
+            <div class="hidden sm:flex items-center gap-1.5 mr-2 px-1">
+                <span class="w-3 h-3 rounded-full bg-rose-500/90 inline-block"></span>
+                <span class="w-3 h-3 rounded-full bg-amber-400/90 inline-block"></span>
+                <span class="w-3 h-3 rounded-full bg-emerald-500/90 inline-block"></span>
+            </div>
+
+            <!-- Dynamic Tabs Container -->
+            <div id="tabs-container" class="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1">
+                <!-- Tabs injected by JS -->
+            </div>
+
+            <!-- New Tab Button -->
+            <button id="new-tab-btn" title="New Tab" class="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex-shrink-0">
+                <i class="fa-solid fa-plus text-xs"></i>
+            </button>
+        </div>
+
+        <!-- 2. Navigation Controls & Address Bar -->
+        <div class="flex items-center gap-2 px-3 py-2 bg-slate-900">
+            <!-- History & Reload Buttons -->
+            <div class="flex items-center gap-1">
+                <button id="btn-back" title="Back" disabled class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition">
+                    <i class="fa-solid fa-arrow-left text-sm"></i>
+                </button>
+                <button id="btn-forward" title="Forward" disabled class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-30 disabled:pointer-events-none transition">
+                    <i class="fa-solid fa-arrow-right text-sm"></i>
+                </button>
+                <button id="btn-reload" title="Reload" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                    <i id="reload-icon" class="fa-solid fa-rotate-right text-sm"></i>
+                </button>
+                <button id="btn-home" title="Home / Presets" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                    <i class="fa-solid fa-house text-sm"></i>
+                </button>
+            </div>
+
+            <!-- URL Address Bar Form -->
+            <form id="url-form" class="flex-1 flex items-center bg-slate-950 border border-slate-700/80 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 rounded-xl px-3 py-1.5 transition-all">
+                <i id="security-icon" class="fa-solid fa-lock text-emerald-400 text-xs mr-2.5" title="Connection Info"></i>
+                <input 
+                    type="text" 
+                    id="url-input" 
+                    placeholder="Enter a URL (e.g., https://en.m.wikipedia.org) or search..." 
+                    autocomplete="off"
+                    class="bg-transparent text-sm text-slate-100 placeholder-slate-500 w-full focus:outline-none select-text"
+                >
+                <button type="button" id="btn-clear-url" class="text-slate-500 hover:text-slate-300 ml-2 hidden">
+                    <i class="fa-solid fa-xmark text-xs"></i>
+                </button>
+            </form>
+
+            <!-- Action Buttons (Open External & Security Info) -->
+            <div class="flex items-center gap-1.5">
+                <button id="btn-open-external" title="Open Current URL in Real Browser Tab" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg flex items-center gap-1.5 transition border border-slate-700">
+                    <span class="hidden md:inline">Open External</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+                </button>
+                <button id="btn-info-modal" title="Why do some sites block iframes?" class="w-8 h-8 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 flex items-center justify-center transition">
+                    <i class="fa-solid fa-circle-info text-sm"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. Quick-Launch Bookmarks Bar -->
+        <div class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/90 border-t border-slate-800/80 overflow-x-auto no-scrollbar text-xs">
+            <span class="text-slate-500 font-medium mr-1 flex-shrink-0"><i class="fa-solid fa-bookmark mr-1"></i>Presets:</span>
+            <div id="bookmarks-bar" class="flex items-center gap-1.5">
+                <!-- Preset buttons injected by JS -->
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="h-0.5 w-full bg-slate-900 overflow-hidden relative">
+            <div id="progress-bar" class="h-full bg-indigo-500 w-0"></div>
+        </div>
+    </header>
+
+    <!-- Main Viewport Container -->
+    <main class="flex-1 relative bg-slate-950 w-full h-full overflow-hidden">
+        
+        <!-- Optional Context Banner (e.g., for Google Embed note) -->
+        <div id="context-banner" class="hidden bg-indigo-950/95 border-b border-indigo-500/30 px-4 py-2 text-xs text-indigo-200 flex items-center justify-between gap-3 z-10 relative">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-circle-info text-indigo-400 flex-shrink-0"></i>
+                <span id="context-banner-text"></span>
+            </div>
+            <button id="close-banner-btn" class="text-indigo-300 hover:text-white px-2 py-0.5 rounded hover:bg-indigo-900">
+                Dismiss
+            </button>
+        </div>
+
+        <!-- Iframe Wrapper -->
+        <div id="iframe-wrapper" class="w-full h-full relative bg-white">
+            <iframe 
+                id="browser-viewport" 
+                src="about:blank" 
+                class="w-full h-full border-0 block"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                referrerpolicy="origin"
+            ></iframe>
+        </div>
+
+        <!-- Home / Start Page Overlay (Shown when tab is on 'nexus://home') -->
+        <div id="home-screen" class="hidden absolute inset-0 bg-slate-950 overflow-y-auto p-6 md:p-12 flex flex-col items-center justify-center z-10">
+            <div class="max-w-3xl w-full space-y-8">
+                <div class="text-center space-y-2">
+                    <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 mb-2 shadow-inner">
+                        <i class="fa-solid fa-globe text-2xl"></i>
+                    </div>
+                    <h1 class="text-2xl md:text-3xl font-bold tracking-tight text-white">NexusFrame Mini-Browser</h1>
+                    <p class="text-slate-400 text-sm max-w-lg mx-auto">
+                        Browse embedded web applications inside a sandboxed frame. All requests originate with your site's <code class="text-indigo-400 bg-slate-900 px-1.5 py-0.5 rounded">Referer</code> header.
+                    </p>
+                </div>
+
+                <!-- Quick Launch Cards -->
+                <div id="home-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Technical Architecture Note -->
+                <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div class="space-y-1">
+                        <p class="font-semibold text-slate-200"><i class="fa-solid fa-shield-halved text-amber-400 mr-1.5"></i>Note on X-Frame-Options & CSP</p>
+                        <p>Standard homepages like <span class="text-slate-300">google.com</span> or <span class="text-slate-300">youtube.com</span> block direct iframe embedding for clickjacking protection. Use embed-friendly endpoints or click <strong>Open External</strong> if a site refuses to connect.</p>
+                    </div>
+                    <button onclick="toggleInfoModal(true)" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-medium whitespace-nowrap transition border border-slate-700">
+                        Learn How It Works
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Blocked / Fallback Helper Floating Bar -->
+        <div id="fallback-bar" class="hidden absolute bottom-4 right-4 left-4 md:left-auto md:max-w-md bg-slate-900/95 backdrop-blur border border-slate-700 shadow-2xl rounded-2xl p-4 z-20 transition-all">
+            <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div class="flex-1 text-xs space-y-2">
+                    <p class="font-semibold text-slate-100 text-sm">Site blank or "Refused to connect"?</p>
+                    <p class="text-slate-400 leading-relaxed">
+                        Many websites send <code class="text-amber-300">X-Frame-Options: DENY</code> to block embedding inside iframes.
+                    </p>
+                    <div class="flex items-center gap-2 pt-1">
+                        <button id="fallback-open-btn" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg transition flex items-center gap-1.5">
+                            <span>Open in New Tab</span>
+                            <i class="fa-solid fa-external-link-alt text-[10px]"></i>
+                        </button>
+                        <button id="fallback-dismiss-btn" class="px-2.5 py-1.5 text-slate-400 hover:text-white rounded-lg transition">
+                            Dismiss
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Educational Modal: X-Frame-Options & Reverse Proxy Explanation -->
+    <div id="info-modal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-code-branch text-indigo-400"></i>
+                    How Browser-in-Browser Works
+                </h2>
+                <button onclick="toggleInfoModal(false)" class="text-slate-400 hover:text-white w-8 h-8 rounded-lg hover:bg-slate-800 flex items-center justify-center">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            
+            <div class="space-y-3 text-sm text-slate-300 leading-relaxed">
+                <p>
+                    <strong>1. Referrer Tracking:</strong> Every page loaded inside this <code class="text-indigo-300">&lt;iframe&gt;</code> receives your main website's domain in its HTTP <code class="text-indigo-300">Referer</code> header (controlled via <code class="text-indigo-300">referrerpolicy="origin"</code>).
+                </p>
+                <p>
+                    <strong>2. Why Google & YouTube Homepages Block Iframes:</strong> Major platforms set <code class="text-amber-300">X-Frame-Options: SAMEORIGIN</code> or <code class="text-amber-300">Content-Security-Policy: frame-ancestors</code> headers to prevent clickjacking attacks. That is why we use official embeddable URLs (like <code class="text-emerald-300">youtube.com/embed/...</code> and Google Maps Embed) for the presets.
+                </p>
+                <p>
+                    <strong>3. Want to load <em>any</em> site without blocks?</strong> Pure frontend HTML/JS cannot bypass browser security headers. To run any website seamlessly inside your frame, you must pair this UI with a <strong>Backend Reverse Proxy</strong> (e.g., Node.js/Ultraviolet) that strips <code class="text-amber-300">X-Frame-Options</code> headers before serving the page.
+                </p>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+                <button onclick="toggleInfoModal(false)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl transition">
+                    Got it
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Preset Bookmarks Configuration
+         * Uses embed-friendly URLs so they render reliably inside an iframe.
+         */
+        const PRESETS = [
+            {
+                id: 'youtube',
+                title: 'YouTube Player',
+                shortTitle: 'YouTube',
+                icon: 'fa-brands fa-youtube text-rose-500',
+                url: 'https://www.youtube.com/embed/jfKfPfyJRdk',
+                description: 'Lofi Girl Live Stream via official embed endpoint.',
+                note: 'Using YouTube’s official /embed/ endpoint because www.youtube.com blocks direct iframe embedding.'
+            },
+            {
+                id: 'google',
+                title: 'Google Maps / Search',
+                shortTitle: 'Google Embed',
+                icon: 'fa-brands fa-google text-sky-400',
+                url: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d248849.84916296526!2d77.49085452149588!3d12.953997400000002!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3bae1670c9b44e6d%3A0xf8dfc3e8517e4fe0!2sBengaluru%2C%20Karnataka!5e0!3m2!1sen!2sin!4v1700000000000!5m2!1sen!2sin',
+                description: 'Google Maps interactive embed (Google Search blocks iframes).',
+                note: 'Standard google.com sends X-Frame-Options: SAMEORIGIN. Showing Google’s official embeddable Maps interface instead—or click "Open External" for full Google Search.'
+            },
+            {
+                id: 'wikipedia',
+                title: 'Wikipedia',
+                shortTitle: 'Wikipedia',
+                icon: 'fa-brands fa-wikipedia-w text-slate-200',
+                url: 'https://en.m.wikipedia.org/wiki/Main_Page',
+                description: 'Free online encyclopedia (Mobile web view fits cleanly).',
+                note: null
+            },
+            {
+                id: 'osm',
+                title: 'OpenStreetMap',
+                shortTitle: 'OpenStreetMap',
+                icon: 'fa-solid fa-map-location-dot text-emerald-400',
+                url: 'https://www.openstreetmap.org/export/embed.html?bbox=73.75%2C18.45%2C73.95%2C18.60&layer=mapnik',
+                description: 'Open-source interactive world map layer.',
+                note: null
+            },
+            {
+                id: 'archive',
+                title: 'Internet Archive',
+                shortTitle: 'Archive.org',
+                icon: 'fa-solid fa-landmark text-amber-400',
+                url: 'https://archive.org',
+                description: 'Digital library of free books, movies, software & Wayback Machine.',
+                note: null
+            }
+        ];
+
+        /**
+         * Application State
+         * Manages multiple tabs, each with its own navigation history stack.
+         */
+        let tabs = [];
+        let activeTabId = null;
+        let fallbackTimer = null;
+
+        // DOM Elements
+        const tabsContainer = document.getElementById('tabs-container');
+        const bookmarksBar = document.getElementById('bookmarks-bar');
+        const homeCards = document.getElementById('home-cards');
+        const viewport = document.getElementById('browser-viewport');
+        const homeScreen = document.getElementById('home-screen');
+        const urlForm = document.getElementById('url-form');
+        const urlInput = document.getElementById('url-input');
+        const btnClearUrl = document.getElementById('btn-clear-url');
+        const btnBack = document.getElementById('btn-back');
+        const btnForward = document.getElementById('btn-forward');
+        const btnReload = document.getElementById('btn-reload');
+        const btnHome = document.getElementById('btn-home');
+        const btnNewTab = document.getElementById('new-tab-btn');
+        const btnOpenExternal = document.getElementById('btn-open-external');
+        const btnInfoModal = document.getElementById('btn-info-modal');
+        const progressBar = document.getElementById('progress-bar');
+        const contextBanner = document.getElementById('context-banner');
+        const contextBannerText = document.getElementById('context-banner-text');
+        const closeBannerBtn = document.getElementById('close-banner-btn');
+        const fallbackBar = document.getElementById('fallback-bar');
+        const fallbackOpenBtn = document.getElementById('fallback-open-btn');
+        const fallbackDismissBtn = document.getElementById('fallback-dismiss-btn');
+
+        /**
+         * Initialize the Browser UI
+         */
+        function init() {
+            renderBookmarks();
+            renderHomeCards();
+
+            // Open initial tab with YouTube preset so user immediately sees it working
+            createTab(PRESETS[0].url, PRESETS[0].title, PRESETS[0].icon, PRESETS[0].note);
+
+            // Event Listeners
+            urlForm.addEventListener('submit', handleUrlSubmit);
+            urlInput.addEventListener('input', () => {
+                btnClearUrl.classList.toggle('hidden', urlInput.value.length === 0);
+            });
+            btnClearUrl.addEventListener('click', () => {
+                urlInput.value = '';
+                btnClearUrl.classList.add('hidden');
+                urlInput.focus();
+            });
+
+            btnBack.addEventListener('click', goBack);
+            btnForward.addEventListener('click', goForward);
+            btnReload.addEventListener('click', reloadPage);
+            btnHome.addEventListener('click', () => navigateTo('nexus://home', 'New Tab', 'fa-solid fa-house text-indigo-400'));
+            btnNewTab.addEventListener('click', () => createTab('nexus://home', 'New Tab', 'fa-solid fa-house text-indigo-400'));
+
+            btnOpenExternal.addEventListener('click', openCurrentInNewTab);
+            fallbackOpenBtn.addEventListener('click', openCurrentInNewTab);
+            fallbackDismissBtn.addEventListener('click', () => fallbackBar.classList.add('hidden'));
+            closeBannerBtn.addEventListener('click', () => contextBanner.classList.add('hidden'));
+            btnInfoModal.addEventListener('click', () => toggleInfoModal(true));
+
+            // Iframe load completion listener
+            viewport.addEventListener('load', () => {
+                stopLoadingAnimation();
+            });
+        }
+
+        /**
+         * Render Quick-Launch Bookmarks in the top bar
+         */
+        function renderBookmarks() {
+            bookmarksBar.innerHTML = PRESETS.map(preset => `
+                <button 
+                    onclick="loadPreset('${preset.id}')"
+                    class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-800/70 hover:bg-slate-700 text-slate-200 transition whitespace-nowrap border border-slate-700/50"
+                    title="${preset.description}"
+                >
+                    <i class="${preset.icon}"></i>
+                    <span>${preset.shortTitle}</span>
+                </button>
+            `).join('');
+        }
+
+        /**
+         * Render Cards on the Start/Home Screen
+         */
+        function renderHomeCards() {
+            homeCards.innerHTML = PRESETS.map(preset => `
+                <button 
+                    onclick="loadPreset('${preset.id}')"
+                    class="group text-left bg-slate-900 hover:bg-slate-800/90 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-4 transition-all shadow-sm flex flex-col justify-between gap-3"
+                >
+                    <div class="flex items-center justify-between">
+                        <div class="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-lg group-hover:scale-105 transition-transform">
+                            <i class="${preset.icon}"></i>
+                        </div>
+                        <i class="fa-solid fa-arrow-right text-slate-600 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all text-xs"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-slate-100 text-sm">${preset.title}</h3>
+                        <p class="text-xs text-slate-400 mt-1 line-clamp-2">${preset.description}</p>
+                    </div>
+                </button>
+            `).join('');
+        }
+
+        /**
+         * Load a preset bookmark into the active tab
+         */
+        function loadPreset(presetId) {
+            const preset = PRESETS.find(p => p.id === presetId);
+            if (!preset) return;
+            navigateTo(preset.url, preset.title, preset.icon, preset.note);
+        }
+
+        /**
+         * Create a new browser tab
+         */
+        function createTab(url = 'nexus://home', title = 'New Tab', icon = 'fa-solid fa-globe text-slate-400', note = null) {
+            const id = 'tab-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+            const newTab = {
+                id,
+                title,
+                icon,
+                history: [url],
+                historyIndex: 0,
+                note
+            };
+            tabs.push(newTab);
+            switchTab(id);
+        }
+
+        /**
+         * Switch active tab and sync UI
+         */
+        function switchTab(tabId) {
+            activeTabId = tabId;
+            const tab = getActiveTab();
+            if (!tab) return;
+
+            renderTabs();
+            loadCurrentHistoryEntry(tab);
+        }
+
+        /**
+         * Close a tab by ID
+         */
+        function closeTab(e, tabId) {
+            e.stopPropagation();
+            if (tabs.length === 1) {
+                // Reset last tab to Home instead of closing window
+                const tab = tabs[0];
+                tab.history = ['nexus://home'];
+                tab.historyIndex = 0;
+                tab.title = 'New Tab';
+                tab.icon = 'fa-solid fa-house text-indigo-400';
+                tab.note = null;
+                switchTab(tab.id);
+                return;
+            }
+
+            const idx = tabs.findIndex(t => t.id === tabId);
+            tabs = tabs.filter(t => t.id !== tabId);
+
+            if (activeTabId === tabId) {
+                const nextTab = tabs[Math.max(0, idx - 1)];
+                switchTab(nextTab.id);
+            } else {
+                renderTabs();
+            }
+        }
+
+        /**
+         * Render the top tab strip
+         */
+        function renderTabs() {
+            tabsContainer.innerHTML = tabs.map(tab => {
+                const isActive = tab.id === activeTabId;
+                return `
+                    <div 
+                        onclick="switchTab('${tab.id}')"
+                        class="group flex items-center gap-2 px-3 py-1.5 rounded-t-lg text-xs font-medium cursor-pointer max-w-[180px] min-w-[110px] transition-colors border-t border-x ${
+                            isActive 
+                            ? 'bg-slate-900 text-white border-slate-800' 
+                            : 'bg-slate-950/40 text-slate-400 hover:bg-slate-900/60 hover:text-slate-200 border-transparent'
+                        }"
+                    >
+                        <i class="${tab.icon} text-xs flex-shrink-0"></i>
+                        <span class="truncate flex-1">${escapeHtml(tab.title)}</span>
+                        <button 
+                            onclick="closeTab(event, '${tab.id}')"
+                            class="w-4 h-4 rounded hover:bg-slate-700 flex items-center justify-center text-slate-500 hover:text-white opacity-70 group-hover:opacity-100 transition"
+                            title="Close Tab"
+                        >
+                            <i class="fa-solid fa-xmark text-[10px]"></i>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        /**
+         * Handle URL bar submission
+         */
+        function handleUrlSubmit(e) {
+            e.preventDefault();
+            let rawInput = urlInput.value.trim();
+            if (!rawInput) return;
+
+            if (rawInput === 'nexus://home') {
+                navigateTo('nexus://home', 'New Tab', 'fa-solid fa-house text-indigo-400');
+                return;
+            }
+
+            let formattedUrl = rawInput;
+            let customNote = null;
+
+            // Check if input looks like a domain/URL vs a search query
+            const hasProtocol = /^https?:\/\//i.test(rawInput);
+            const looksLikeDomain = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+/.test(rawInput) && !rawInput.includes(' ');
+
+            if (hasProtocol) {
+                formattedUrl = rawInput;
+            } else if (looksLikeDomain) {
+                formattedUrl = 'https://' + rawInput;
+            } else {
+                // Convert plain text query into Wikipedia search (since Google Search blocks iframes)
+                formattedUrl = `https://en.m.wikipedia.org/w/index.php?search=${encodeURIComponent(rawInput)}`;
+                customNote = `Searched "${rawInput}" on Wikipedia (standard Google Search blocks direct iframe embedding).`;
+            }
+
+            // Auto-convert standard YouTube watch URLs to embeddable URLs for user convenience
+            const ytMatch = formattedUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+            if (ytMatch && ytMatch[1]) {
+                formattedUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
+                customNote = 'Automatically converted YouTube link to its official /embed/ player URL so it works inside this frame.';
+            }
+
+            // Extract clean hostname for tab title
+            let hostname = formattedUrl;
+            try {
+                hostname = new URL(formattedUrl).hostname.replace('www.', '');
+            } catch (_) {}
+
+            navigateTo(formattedUrl, hostname, 'fa-solid fa-globe text-indigo-400', customNote);
+        }
+
+        /**
+         * Navigate active tab to a new URL and push to history
+         */
+        function navigateTo(url, title = null, icon = 'fa-solid fa-globe text-indigo-400', note = null) {
+            const tab = getActiveTab();
+            if (!tab) return;
+
+            // Truncate forward history if navigating from middle of stack
+            if (tab.historyIndex < tab.history.length - 1) {
+                tab.history = tab.history.slice(0, tab.historyIndex + 1);
+            }
+
+            tab.history.push(url);
+            tab.historyIndex = tab.history.length - 1;
+            tab.title = title || url;
+            tab.icon = icon;
+            tab.note = note;
+
+            renderTabs();
+            loadCurrentHistoryEntry(tab);
+        }
+
+        /**
+         * Render the current history entry of a tab into the viewport
+         */
+        function loadCurrentHistoryEntry(tab) {
+            const currentUrl = tab.history[tab.historyIndex];
+            urlInput.value = currentUrl === 'nexus://home' ? '' : currentUrl;
+            btnClearUrl.classList.toggle('hidden', urlInput.value.length === 0);
+
+            // Update Back / Forward button states
+            btnBack.disabled = tab.historyIndex <= 0;
+            btnForward.disabled = tab.historyIndex >= tab.history.length - 1;
+
+            // Handle Context Banner
+            if (tab.note) {
+                contextBannerText.textContent = tab.note;
+                contextBanner.classList.remove('hidden');
+            } else {
+                contextBanner.classList.add('hidden');
+            }
+
+            // Clear any pending fallback prompt
+            clearTimeout(fallbackTimer);
+            fallbackBar.classList.add('hidden');
+
+            if (currentUrl === 'nexus://home') {
+                homeScreen.classList.remove('hidden');
+                viewport.src = 'about:blank';
+                stopLoadingAnimation();
+            } else {
+                homeScreen.classList.add('hidden');
+                startLoadingAnimation();
+                viewport.src = currentUrl;
+
+                // Show gentle helper toast if user visits a non-preset external URL that might be blocked by X-Frame-Options
+                const isKnownEmbed = PRESETS.some(p => currentUrl.startsWith(p.url.split('?')[0])) || currentUrl.includes('/embed/');
+                if (!isKnownEmbed) {
+                    fallbackTimer = setTimeout(() => {
+                        fallbackBar.classList.remove('hidden');
+                    }, 3500);
+                }
+            }
+        }
+
+        /**
+         * History & Reload Controls
+         */
+        function goBack() {
+            const tab = getActiveTab();
+            if (tab && tab.historyIndex > 0) {
+                tab.historyIndex--;
+                loadCurrentHistoryEntry(tab);
+            }
+        }
+
+        function goForward() {
+            const tab = getActiveTab();
+            if (tab && tab.historyIndex < tab.history.length - 1) {
+                tab.historyIndex++;
+                loadCurrentHistoryEntry(tab);
+            }
+        }
+
+        function reloadPage() {
+            const tab = getActiveTab();
+            if (!tab) return;
+            const currentUrl = tab.history[tab.historyIndex];
+            if (currentUrl !== 'nexus://home') {
+                startLoadingAnimation();
+                viewport.src = currentUrl;
+            }
+        }
+
+        /**
+         * Open current URL in a real browser tab (escape hatch for X-Frame-Options)
+         */
+        function openCurrentInNewTab() {
+            const tab = getActiveTab();
+            if (!tab) return;
+            const currentUrl = tab.history[tab.historyIndex];
+            if (currentUrl && currentUrl !== 'nexus://home') {
+                window.open(currentUrl, '_blank', 'noopener,noreferrer');
+            }
+        }
+
+        /**
+         * Visual loading indicators
+         */
+        function startLoadingAnimation() {
+            progressBar.classList.remove('animate-load');
+            void progressBar.offsetWidth; // trigger reflow
+            progressBar.classList.add('animate-load');
+            document.getElementById('reload-icon').classList.add('fa-spin');
+        }
+
+        function stopLoadingAnimation() {
+            document.getElementById('reload-icon').classList.remove('fa-spin');
+        }
+
+        /**
+         * Toggle Educational Modal
+         */
+        function toggleInfoModal(show) {
+            document.getElementById('info-modal').classList.toggle('hidden', !show);
+        }
+
+        /**
+         * Helpers
+         */
+        function getActiveTab() {
+            return tabs.find(t => t.id === activeTabId);
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Boot up
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
